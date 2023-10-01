@@ -12,17 +12,23 @@ import (
 
 // TODO make singelton - Should it?
 
+const (
+	packetBufferSize = 1472 // ICMP max Payload size - (MTU - IP header  - ICMP -> 1500-2008=1472)
+)
+
 type ICMPServer struct {
-	lock        sync.Mutex
-	defaultChan chan *layers.ICMPv4
-	listener    *ICMPListener
-	writeChan   chan *layers.ICMPv4
-	readChan    chan *layers.ICMPv4
+	srcIP              string
+	lock               sync.Mutex
+	defaultChan        chan *layers.ICMPv4
+	listener           *ICMPListener
+	writeChan          chan *layers.ICMPv4
+	readChan           chan *layers.ICMPv4
+	channelsBufferSize int
 }
 
-func NewICMPServer(reciverInterface string) (*ICMPServer, error) {
+func NewICMPServer(reciverInterface string, srcIP string, channelsBufferSize int) (*ICMPServer, error) {
 	defaultChan := make(chan *layers.ICMPv4, 100)
-	listener, err := NewICMPListener(reciverInterface, ipv4.ICMPTypeEcho, defaultChan)
+	listener, err := NewICMPListener(reciverInterface, srcIP, ipv4.ICMPTypeEcho, defaultChan)
 	if err != nil {
 		return nil, err
 	}
@@ -30,11 +36,13 @@ func NewICMPServer(reciverInterface string) (*ICMPServer, error) {
 	go listener.Listen()
 
 	return &ICMPServer{
-		lock:        sync.Mutex{},
-		defaultChan: defaultChan,
-		listener:    listener,
-		writeChan:   make(chan *layers.ICMPv4, 100),
-		readChan:    make(chan *layers.ICMPv4, 100),
+		srcIP:              srcIP,
+		lock:               sync.Mutex{},
+		defaultChan:        defaultChan,
+		listener:           listener,
+		writeChan:          make(chan *layers.ICMPv4, channelsBufferSize),
+		readChan:           make(chan *layers.ICMPv4, channelsBufferSize),
+		channelsBufferSize: channelsBufferSize,
 	}, nil
 }
 
@@ -53,20 +61,20 @@ func (s *ICMPServer) Listen() {
 			conn, err := net.Dial("tcp", fmt.Sprintf("%s:%d", req.IP, req.Port))
 			if err != nil {
 				res := NewConnectionResponse{errorCode: failedEstablish}
-				ICMPEcho("127.0.0.1", int(newConnectionResponseCode), int(packet.Id), 0, res.Marshal(), true)
+				ICMPEcho(s.srcIP, int(newConnectionResponseCode), int(packet.Id), 0, res.Marshal(), true)
 				continue
 			}
 
 			listenChan, err := s.listener.AddListener(newConnID)
 			if err != nil {
 				res := NewConnectionResponse{errorCode: failedAddingListener}
-				ICMPEcho("127.0.0.1", int(newConnectionResponseCode), int(packet.Id), 0, res.Marshal(), true)
+				ICMPEcho(s.srcIP, int(newConnectionResponseCode), int(packet.Id), 0, res.Marshal(), true)
 				continue
 			}
 			go s.handleConn(conn, listenChan, newConnID)
 
 			res := NewConnectionResponse{errorCode: success}
-			ICMPEcho("127.0.0.1", int(newConnectionResponseCode), int(packet.Id), 0, res.Marshal(), true)
+			ICMPEcho(s.srcIP, int(newConnectionResponseCode), int(packet.Id), 0, res.Marshal(), true)
 		}
 	}
 }
@@ -84,7 +92,7 @@ func (s *ICMPServer) handleConn(conn net.Conn, listener chan *layers.ICMPv4, new
 	defer conn.Close()
 	defer s.listener.RemoveListener(newConnID)
 
-	readChan := make(chan readObj, 100)
+	readChan := make(chan readObj, s.channelsBufferSize)
 	closeChan := make(chan bool)
 	go func() {
 		for {
@@ -95,7 +103,7 @@ func (s *ICMPServer) handleConn(conn net.Conn, listener chan *layers.ICMPv4, new
 			default:
 			}
 
-			readBuffer := make([]byte, 1000)
+			readBuffer := make([]byte, packetBufferSize)
 			n, err := conn.Read(readBuffer) // TODO: handle error
 			if n != 0 {
 				log.Printf("Read data: %x", readBuffer[:n])
@@ -129,10 +137,10 @@ func (s *ICMPServer) handleConn(conn net.Conn, listener chan *layers.ICMPv4, new
 		}
 
 		if ro.err != nil {
-			ICMPEcho("127.0.0.1", int(closeConnectionRequestCode), int(newConnID), int(packet.Seq), ro.b, true)
+			ICMPEcho(s.srcIP, int(closeConnectionRequestCode), int(newConnID), int(packet.Seq), ro.b, true)
 			return
 		}
 
-		ICMPEcho("127.0.0.1", int(readCode), int(newConnID), int(packet.Seq), ro.b, true)
+		ICMPEcho(s.srcIP, int(readCode), int(newConnID), int(packet.Seq), ro.b, true)
 	}
 }

@@ -3,10 +3,12 @@ package main
 import (
 	"context"
 	"errors"
+	"flag"
 	"log"
 	"net"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/armon/go-socks5"
 
@@ -37,14 +39,22 @@ func createDialer(dialer *ICMPDialer.ICMPDialer) func(ctx context.Context, netwo
 	}
 }
 
-const (
-	inter      = "lo"
-	remoteIP   = "127.0.0.1"
-	listenAddr = "127.0.0.1:8000"
+var (
+	inter         string
+	remoteIP      string
+	listenAddr    string
+	sleepDuration time.Duration
+	bufferSize    int
 )
 
 func main() {
-	dialer, err := ICMPDialer.NewICMPDialer(remoteIP, inter)
+	flag.StringVar(&inter, "i", "lo", "interface to listen on")
+	flag.StringVar(&remoteIP, "d", "127.0.0.1", "remote ICMP server address")
+	flag.StringVar(&listenAddr, "l", "127.0.0.1:8000", "socks server listen address [ip:port]")
+	flag.DurationVar(&sleepDuration, "s", time.Microsecond, "sleep duration between each icmp echo request [time.ParseDuration format]")
+	flag.IntVar(&bufferSize, "b", 100, "all channels buffer size")
+
+	dialer, err := ICMPDialer.NewICMPDialer(remoteIP, inter, sleepDuration, bufferSize)
 	if err != nil {
 		panic(err)
 	}

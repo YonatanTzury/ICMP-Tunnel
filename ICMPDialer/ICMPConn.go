@@ -12,14 +12,16 @@ import (
 )
 
 type ICMPConn struct {
-	remoteIP   string
-	remotePort uint16
-	id         uint16
-	seq        uint16
-	lock       sync.Mutex
-	readChan   chan *layers.ICMPv4
-	writeChan  chan []byte
-	errChan    chan error
+	icmpServer    string
+	remoteIP      string
+	remotePort    uint16
+	id            uint16
+	seq           uint16
+	lock          sync.Mutex
+	readChan      chan *layers.ICMPv4
+	writeChan     chan []byte
+	errChan       chan error
+	sleepDuration time.Duration
 }
 
 func (c *ICMPConn) Handle() {
@@ -31,11 +33,12 @@ func (c *ICMPConn) Handle() {
 			log.Printf("Err: %v", err)
 			return
 		default:
-			time.Sleep(time.Second)
+			time.Sleep(c.sleepDuration)
 		}
 
+		// TODO check for max seq number
 		c.seq += 1
-		ICMPEcho("127.0.0.1", int(writeCode), int(c.id), int(c.seq), b, false)
+		ICMPEcho(c.icmpServer, int(writeCode), int(c.id), int(c.seq), b, false)
 	}
 
 }
@@ -61,14 +64,18 @@ func (c *ICMPConn) Write(b []byte) (n int, err error) {
 }
 
 func (c *ICMPConn) Close() error {
-	ICMPEcho("127.0.0.1", int(closeConnectionRequestCode), int(c.id), int(c.seq), []byte{}, false)
+	err := ICMPEcho(c.icmpServer, int(closeConnectionRequestCode), int(c.id), int(c.seq), []byte{}, false)
+	if err != nil {
+		return err
+	}
 	c.errChan <- io.EOF
 
 	return nil
 }
 
 func (c *ICMPConn) LocalAddr() net.Addr {
-	// TODO: implement
+	// const address because the socks library require &net.TCPAddr instead of generic net.Addr interface
+	// TODO fix the bug in the socks library
 	return &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 80}
 }
 

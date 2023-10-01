@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"sync"
+	"time"
 
 	"github.com/google/gopacket/layers"
 	"golang.org/x/net/ipv4"
@@ -13,20 +14,22 @@ import (
 // TODO make singelton
 
 type ICMPDialer struct {
-	remoteIP          string
-	connectionCounter int
-	lock              sync.Mutex
-	listener          *ICMPListener
+	icmpServer         string
+	connectionCounter  int
+	lock               sync.Mutex
+	listener           *ICMPListener
+	sleepDuration      time.Duration
+	channelsBufferSize int
 }
 
-func NewICMPDialer(ip string, reciverInterface string) (*ICMPDialer, error) {
-	defaultChan := make(chan *layers.ICMPv4, 100)
+func NewICMPDialer(ip string, reciverInterface string, sleepDuration time.Duration, channelsBufferSize int) (*ICMPDialer, error) {
+	defaultChan := make(chan *layers.ICMPv4, channelsBufferSize)
 	go func() {
 		for range defaultChan {
 		}
 	}()
 
-	listener, err := NewICMPListener(reciverInterface, ipv4.ICMPTypeEchoReply, defaultChan)
+	listener, err := NewICMPListener(reciverInterface, ip, ipv4.ICMPTypeEchoReply, defaultChan)
 	if err != nil {
 		return nil, err
 	}
@@ -34,10 +37,12 @@ func NewICMPDialer(ip string, reciverInterface string) (*ICMPDialer, error) {
 	go listener.Listen()
 
 	return &ICMPDialer{
-		remoteIP:          ip,
-		connectionCounter: 0,
-		lock:              sync.Mutex{},
-		listener:          listener,
+		icmpServer:         ip,
+		connectionCounter:  0,
+		lock:               sync.Mutex{},
+		listener:           listener,
+		sleepDuration:      sleepDuration,
+		channelsBufferSize: channelsBufferSize,
 	}, nil
 }
 
@@ -60,7 +65,7 @@ func (s *ICMPDialer) Dial(ip string, port uint16) (*ICMPConn, error) {
 		return nil, err
 	}
 
-	err = ICMPEcho(s.remoteIP, int(newConnectionRequestCode), currentConnectionID, 0, b, false)
+	err = ICMPEcho(s.icmpServer, int(newConnectionRequestCode), currentConnectionID, 0, b, false)
 	if err != nil {
 		return nil, err
 	}
@@ -85,14 +90,16 @@ func (s *ICMPDialer) Dial(ip string, port uint16) (*ICMPConn, error) {
 	log.Printf("[+] Connection esablished: {id: %d}", currentConnectionID)
 
 	con := &ICMPConn{
-		remoteIP:   ip,
-		remotePort: port,
-		id:         uint16(currentConnectionID),
-		seq:        0,
-		lock:       sync.Mutex{},
-		readChan:   listenChan,
-		writeChan:  make(chan []byte, 100),
-		errChan:    make(chan error),
+		icmpServer:    s.icmpServer,
+		remoteIP:      ip,
+		remotePort:    port,
+		id:            uint16(currentConnectionID),
+		seq:           0,
+		lock:          sync.Mutex{},
+		readChan:      listenChan,
+		writeChan:     make(chan []byte, s.channelsBufferSize),
+		errChan:       make(chan error),
+		sleepDuration: s.sleepDuration,
 	}
 
 	go con.Handle()

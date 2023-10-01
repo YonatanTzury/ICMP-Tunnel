@@ -23,7 +23,7 @@ type ICMPListener struct {
 	lock sync.RWMutex
 }
 
-func NewICMPListener(inter string, icmpPacketType ipv4.ICMPType, defaultListener chan *layers.ICMPv4) (*ICMPListener, error) {
+func NewICMPListener(inter string, srcIP string, icmpPacketType ipv4.ICMPType, defaultListener chan *layers.ICMPv4) (*ICMPListener, error) {
 	handle, err := pcap.OpenLive(inter, defaultSnapLen, true, pcap.BlockForever)
 	if err != nil {
 		return nil, err
@@ -32,7 +32,7 @@ func NewICMPListener(inter string, icmpPacketType ipv4.ICMPType, defaultListener
 	// TODO add host unreachable
 	// Sniff only icmp echo packets
 
-	bpfFilter := fmt.Sprintf("icmp[icmptype] == %d", icmpPacketType)
+	bpfFilter := fmt.Sprintf("icmp[icmptype] == %d and src host %s", icmpPacketType, srcIP)
 	err = handle.SetBPFFilter(bpfFilter)
 	if err != nil {
 		return nil, err
@@ -54,7 +54,7 @@ func (r *ICMPListener) handlePacket(pkt gopacket.Packet) {
 	icmpLayer := pkt.Layer(layers.LayerTypeICMPv4)
 	if icmpLayer == nil {
 		// This never should happend because the bpf filter
-		log.Println("[!] Error in handlePacket")
+		log.Println("[!] Error in handlePacket, not ICMP layer found")
 		return
 	}
 
