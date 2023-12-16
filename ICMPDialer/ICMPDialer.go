@@ -11,8 +11,6 @@ import (
 	"golang.org/x/net/ipv4"
 )
 
-// TODO make singelton
-
 type ICMPDialer struct {
 	icmpServer         string
 	connectionCounter  int
@@ -46,7 +44,7 @@ func NewICMPDialer(ip string, reciverInterface string, sleepDuration time.Durati
 	}, nil
 }
 
-func (s *ICMPDialer) Dial(ip string, port uint16) (*ICMPConn, error) {
+func (s *ICMPDialer) Dial(ip string, port uint16) (*ActiveICMPConn, error) {
 	s.lock.Lock()
 	s.connectionCounter += 1
 	currentConnectionID := s.connectionCounter
@@ -74,7 +72,6 @@ func (s *ICMPDialer) Dial(ip string, port uint16) (*ICMPConn, error) {
 	expectedTypeCode := layers.CreateICMPv4TypeCode(uint8(ipv4.ICMPTypeEchoReply), newConnectionResponseCode)
 
 	if ackPacket.TypeCode != expectedTypeCode {
-		// TODO: maybe waite for next packet?
 		return nil, errors.New("unexpected type recieve")
 	}
 
@@ -89,7 +86,7 @@ func (s *ICMPDialer) Dial(ip string, port uint16) (*ICMPConn, error) {
 
 	log.Printf("[+] Connection esablished: {id: %d}", currentConnectionID)
 
-	con := &ICMPConn{
+	con := &ActiveICMPConn{
 		icmpServer:    s.icmpServer,
 		remoteIP:      ip,
 		remotePort:    port,

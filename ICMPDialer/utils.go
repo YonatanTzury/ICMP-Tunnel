@@ -25,10 +25,10 @@ func ICMPEcho(targetIP string, code int, ID int, seq int, data []byte, isReplay 
 
 	icmpMessege := icmp.Message{
 		Type: icmpType,
-		Code: code, // Type
+		Code: code,
 		Body: &icmp.Echo{
-			ID:   ID & 0xffff, // TODO change this - Connection id
-			Seq:  seq,         // Packet id per connection
+			ID:   ID & 0xffff,
+			Seq:  seq,
 			Data: data,
 		},
 	}

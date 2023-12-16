@@ -29,9 +29,7 @@ func NewICMPListener(inter string, srcIP string, icmpPacketType ipv4.ICMPType, d
 		return nil, err
 	}
 
-	// TODO add host unreachable
 	// Sniff only icmp echo packets
-
 	bpfFilter := fmt.Sprintf("icmp[icmptype] == %d and src host %s", icmpPacketType, srcIP)
 	err = handle.SetBPFFilter(bpfFilter)
 	if err != nil {
@@ -59,7 +57,6 @@ func (r *ICMPListener) handlePacket(pkt gopacket.Packet) {
 	}
 
 	icmpPacket := icmpLayer.(*layers.ICMPv4)
-	log.Printf("Handle packet {id: %d, seq: %d}", icmpPacket.Id, icmpPacket.Seq)
 
 	r.lock.RLock()
 	listenChan, ok := r.listners[icmpPacket.Id]
